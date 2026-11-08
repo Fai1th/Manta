@@ -37,10 +37,12 @@ export function createBot(store, config) {
   async function manageRecord(actorId,id,status,note) {
     await actor(actorId);
     const r=store.get(id); if(!r || !['report','appeal','ticket'].includes(r.kind)) throw new Error('Record not found.');
-    if(r.kind==='ticket' && status==='resolved' && r.data.channel) {
+    const closed = ['resolved','dismissed'];
+    if(r.kind==='ticket' && r.data.channel && (closed.includes(status)||closed.includes(r.status))) {
       const c=await channel(r.data.channel);
-      await c.permissionOverwrites.edit(r.user_id,{SendMessages:false}, {reason:`Ticket #${id} closed by ${actorId}`});
-      await c.send('This ticket is closed. Staff can still review its history.');
+      const closing=closed.includes(status);
+      await c.permissionOverwrites.edit(r.user_id,{SendMessages:!closing}, {reason:`Ticket #${id} updated by ${actorId}`});
+      await c.send(closing?'This ticket is closed. Staff can still review its history.':'This ticket has been reopened.');
     }
     const history=[...(r.data.history||[]),{actor:actorId,status,note,at:Date.now()}];
     const firstResponse=r.data.firstResponse||Date.now();
@@ -50,7 +52,7 @@ export function createBot(store, config) {
   async function ticket(userId,subject) {
     const g=guild(), s=store.settings();
     if(!s.supportRole) throw new Error('Staff must configure a support role first.');
-    const existing=store.list('ticket',10000).find(r=>r.user_id===userId && r.status!=='resolved' && r.status!=='failed');
+    const existing=store.list('ticket',10000).find(r=>r.user_id===userId && !['resolved','dismissed','failed'].includes(r.status));
     if(existing) throw new Error(`You already have ticket #${existing.id}.`);
     const id=store.record('ticket',userId,userId,{subject},'creating');
     try {
@@ -150,7 +152,7 @@ export function createBot(store, config) {
   client.on('shardDisconnect',()=>{voice.clear();store.record('log','','system',{type:'Gateway disconnected; tracking gap begins'},'recorded');});
   client.on('shardResume',safe(async()=>{seedVoice();await log('Gateway reconnected',{note:'Events during the disconnect may be incomplete.'});}));
   client.on('error',e=>console.error('Discord client:',e.code||e.name));
-  client.once('clientReady',safe(async()=>{
+  client.on('clientReady',safe(async()=>{
     const g=guild(); seedVoice();
     await g.commands.set([
       {name:'Report message',type:ApplicationCommandType.Message},
@@ -199,7 +201,7 @@ export function createBot(store, config) {
         const st=store.stats(7); await (await channel(s.digestChannel)).send(`Weekly server digest (UTC)\n${st.activeMembers} active members · ${st.messages} messages · ${(st.voiceSeconds/3600).toFixed(1)} voice hours\n${st.joins} joins · ${st.leaves} leaves\n${store.list('report',10000).filter(r=>!['resolved','dismissed'].includes(r.status)).length} open reports`);
         store.db.prepare('INSERT OR REPLACE INTO meta VALUES (?,?)').run('digest_date',today);
       }
-      if(s.reminders) for(const r of store.list('ticket',10000).filter(r=>!['resolved','failed','creating'].includes(r.status)&&now-r.updated>48*3600000&&!r.data.reminded)) { await notify(`Ticket #${r.id} has waited 48 hours without a staff update.`); store.update(r.id,r.status,{...r.data,reminded:true}); }
+      if(s.reminders) for(const r of store.list('ticket',10000).filter(r=>!['resolved','dismissed','failed','creating'].includes(r.status)&&now-r.updated>48*3600000&&!r.data.reminded)) { await notify(`Ticket #${r.id} has waited 48 hours without a staff update.`); store.update(r.id,r.status,{...r.data,reminded:true}); }
       store.cleanup();
     } finally { ticking=false; }
   }

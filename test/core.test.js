@@ -5,6 +5,7 @@ import { openDatabase } from '../src/db.js';
 import { actionSchema, settingsSchema, checkHierarchy } from '../src/validation.js';
 import { createApp } from '../src/server.js';
 import { createBot } from '../src/bot.js';
+import { Collection } from 'discord.js';
 const uid='123456789012345678', other='223456789012345678';
 
 test('counts humans by day, respects exclusions, scopes personal stats and deduplicates events',()=>{
@@ -74,4 +75,26 @@ test('failed Discord moderation leaves a failed case and no successful action',a
   bot.client.guilds.cache.set('guild',{ownerId:'owner',members:{fetch:async({user})=>user===uid?actor:target}});
   await assert.rejects(bot.moderate(uid,{type:'ban',user:other,reason:'test reason'}),/rejected/);
   assert.equal(store.list('case')[0].status,'failed');bot.close();store.db.close();
+});
+test('ticket dismissal closes access and reopening restores the member’s ability to reply',async()=>{
+  const store=openDatabase(':memory:'),bot=createBot(store,{guildId:'guild'});bot.client.isReady=()=>true;
+  const writes=[];const c={isTextBased:()=>true,send:async()=>{},permissionOverwrites:{edit:async(id,value)=>writes.push(value.SendMessages)}};
+  bot.client.guilds.cache.set('guild',{ownerId:uid,members:{fetch:async()=>({id:uid,permissions:{has:()=>true}})},channels:{fetch:async()=>c}});
+  const id=store.record('ticket',other,other,{channel:'channel'});
+  await bot.manageRecord(uid,id,'dismissed','closing ticket');assert.equal(store.get(id).status,'dismissed');
+  await bot.manageRecord(uid,id,'open','reopening ticket');assert.deepEqual(writes,[false,true]);assert.equal(store.get(id).data.history.length,2);
+  bot.close();store.db.close();
+});
+test('self-service refuses a zero-permission role that grants access through a channel override',async()=>{
+  const store=openDatabase(':memory:'),bot=createBot(store,{guildId:'guild'});bot.client.isReady=()=>true;
+  const role={id:other,managed:false,permissions:{bitfield:0n},comparePositionTo:()=>-1};
+  store.saveSettings({...store.settings(),selfRoles:[other]});
+  bot.client.guilds.cache.set('guild',{id:'guild',roles:{fetch:async()=>role},members:{fetchMe:async()=>({roles:{highest:{}}})},channels:{fetch:async()=>{},cache:new Collection([['channel',{permissionOverwrites:{cache:new Collection([[other,{allow:{bitfield:1024n}}]])}}]])}});
+  await assert.rejects(bot.role(uid,other),/no server or channel permission grants/);bot.close();store.db.close();
+});
+test('incident restoration uses the recorded pre-incident slowmode, and persists completion',async()=>{
+  const store=openDatabase(':memory:'),bot=createBot(store,{guildId:'guild'});bot.client.isReady=()=>true;
+  const writes=[];const c={id:'channel',type:0,rateLimitPerUser:10,isTextBased:()=>true,send:async()=>{},permissionOverwrites:{cache:new Collection()},setRateLimitPerUser:async n=>writes.push(n)};
+  bot.client.guilds.cache.set('guild',{id:'guild',ownerId:uid,members:{fetch:async()=>({id:uid,permissions:{has:()=>true}})},channels:{fetch:async()=>c}});
+  const r=await bot.incident(uid,'slowmode',['channel'],60,'test incident');assert.equal(r.data.channels[0].slowmode,10);await bot.restore(uid,r.id);assert.deepEqual(writes,[60,10]);assert.equal(store.get(r.id).status,'restored');bot.close();store.db.close();
 });
