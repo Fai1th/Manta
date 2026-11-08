@@ -71,4 +71,6 @@ Rotate Discord credentials in the Developer Portal and update host secrets if ex
 
 Tests cover database counters, exclusions, retention, validation, hierarchy, anonymous/revoked access, CSRF/origin enforcement, request deduplication, session logout, private case isolation and failed Discord action recording. Live OAuth, real Discord permissions/Gateway delivery, cloud TLS/proxy cookies, Docker deployment and full assistive-technology testing still require an integration environment.
 
+For Railway specifically, set `RAILWAY_RUN_UID=0` because its volumes are mounted as root. The supplied container entrypoint takes ownership of the data directory and then drops to the `node` user before running the app; the bot does not continue running as root. Leave the image's default start command unchanged. See [Railway volume permissions](https://docs.railway.com/volumes#permissions).
+
 Official references: [Discord OAuth2](https://docs.discord.com/developers/topics/oauth2), [Gateway intents](https://docs.discord.com/developers/events/gateway), [permissions](https://docs.discord.com/developers/topics/permissions), [discord.js](https://discord.js.org/docs/packages/discord.js/14.28.1).
