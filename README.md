@@ -2,6 +2,12 @@
 
 Discord server management and activity analytics, without RPGs, XP economies or minigames. Node.js 24+, discord.js, Express and a persistent SQLite database. The dashboard source is [Manta-Website](https://github.com/Fai1th/Manta-Website).
 
+## Free and open source
+
+Manta is licensed under the [MIT License](LICENSE). All included management and analytics features are available without a Manta subscription, license key or premium tier. You can use, modify and redistribute the source, including commercially, while preserving the license and copyright notice. Dependencies retain their own licenses.
+
+There is no required paid Manta service. Run the container on compatible infrastructure you control or choose a hosting provider. Hosting, storage and domain costs are separate from the software; a reliable, permanently free cloud service is not guaranteed. Keep the persistent volume and always-running process required by this version. The `private: true` package field prevents accidental npm publication; it does not restrict the MIT license or GitHub source visibility.
+
 ## Architecture
 
 One running container serves the website, OAuth callback, API and Discord Gateway client. Your computer can be off. Deploy the **Manta-Website** container for the complete product: it fetches a pinned version of this public backend and adds the dashboard. This repository alone provides the bot and API; its Dockerfile does not contain the dashboard. Use `WEB_DIR` to serve a separately checked-out website's `public` directory during development.
