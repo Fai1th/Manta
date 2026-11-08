@@ -11,3 +11,6 @@ The bot, API and persistent database live here. The frontend lives in `Fai1th/Ma
 ## Optional local project memory
 
 When available, read `D:/Obsidian/CS-Notes/Codex/Projects/Manta.md` and only its relevant linked notes. Verify remembered claims against current code and executed checks. Keep shared requirements and runnable verification in the repositories. Update the brief with evidence and commit after authorized work; never put credentials or production records in the vault. If the local vault is unavailable, continue from repository evidence and report that limitation.
+
+## Copy preference
+For user-facing text, apply the Humanizer skill in embedded mode before shipping. Keep language plain and specific, including permissions, errors and setup instructions. Preserve feature limits; never imply an unconfigured integration is live.

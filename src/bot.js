@@ -1,5 +1,6 @@
 import { Client, GatewayIntentBits as I, PermissionFlagsBits as P, ChannelType, MessageFlags, ApplicationCommandType, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import { canManage, checkHierarchy, actionSchema } from './validation.js';
+import { createIntegrations } from './integrations.js';
 
 export function createBot(store, config) {
   const client = new Client({ intents:[I.Guilds,I.GuildMembers,I.GuildMessages,I.GuildVoiceStates,I.GuildModeration,I.GuildWebhooks,...(config.messageContent?[I.MessageContent]:[])], allowedMentions:{parse:[]} });
@@ -9,6 +10,7 @@ export function createBot(store, config) {
   async function notify(text) { const id=store.settings().logChannel; if(id) await (await channel(id)).send({content:text.slice(0,1950),allowedMentions:{parse:[]}}); }
   async function log(type, data) { store.record('log','',client.user?.id||'system',{type,...data},'recorded'); await notify(`**${type}**\n${JSON.stringify(data).slice(0,1700)}`); }
   async function actor(id) { const m=await guild().members.fetch({user:id,force:true}); if(!canManage(m,guild())) throw new Error('Manage Server permission is required.'); return m; }
+  const integrations=createIntegrations(store,{actor,channel},{secret:config.sessionSecret,twitchId:config.twitchId,twitchSecret:config.twitchSecret});
   function requirePermission(member, flag) { if(!member.permissions.has(flag)) throw new Error('Your Discord permissions do not allow this action.'); }
   async function moderate(actorId, input) {
     const data=actionSchema.parse(input), g=guild(), a=await actor(actorId);
@@ -203,10 +205,11 @@ export function createBot(store, config) {
       }
       if(s.reminders) for(const r of store.list('ticket',10000).filter(r=>!['resolved','dismissed','failed','creating'].includes(r.status)&&now-r.updated>48*3600000&&!r.data.reminded)) { await notify(`Ticket #${r.id} has waited 48 hours without a staff update.`); store.update(r.id,r.status,{...r.data,reminded:true}); }
       store.cleanup();
+      await integrations.tick();
     } finally { ticking=false; }
   }
   const timer=setInterval(safe(tick),60000); timer.unref();
-  return {client,guild,actor,moderate,manageRecord,ticket,transcript,role,rolePanel,incident,restore,audit,log,channel,report, tick,
+  return {client,guild,actor,moderate,manageRecord,ticket,transcript,role,rolePanel,incident,restore,audit,log,channel,report, tick,integrations,
     start:()=>client.login(config.token), close:()=>{clearInterval(timer);flushVoice();client.destroy();},
     async reference(){const g=guild();await g.channels.fetch();await g.roles.fetch();return {name:g.name,id:g.id,memberCount:g.memberCount,channels:g.channels.cache.map(c=>({id:c.id,name:c.name,type:c.type,private:!c.permissionsFor(g.roles.everyone)?.has(P.ViewChannel)})),roles:g.roles.cache.map(r=>({id:r.id,name:r.name,selfServiceSafe:!r.managed&&r.id!==g.id&&r.permissions.bitfield===0n&&!g.channels.cache.some(c=>(c.permissionOverwrites?.cache.get(r.id)?.allow.bitfield||0n)!==0n)}))};}
   };

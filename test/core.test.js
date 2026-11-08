@@ -6,6 +6,7 @@ import { actionSchema, settingsSchema, checkHierarchy } from '../src/validation.
 import { createApp } from '../src/server.js';
 import { createBot } from '../src/bot.js';
 import { Collection } from 'discord.js';
+import { createIntegrations } from '../src/integrations.js';
 const uid='123456789012345678', other='223456789012345678';
 
 test('counts humans by day, respects exclusions, scopes personal stats and deduplicates events',()=>{
@@ -41,6 +42,8 @@ async function fixture(t) {
   let permitted=true, calls=0;
   const bot={client:{isReady:()=>true},actor:async()=>{if(!permitted)throw new Error('revoked');return {id:uid,permissions:{has:()=>true}};},guild:()=>({ownerId:'owner',members:{fetch:async({user})=>({id:user,permissions:{has:()=>user===uid}})}}),reference:async()=>({id:'guild',channels:[],roles:[]}),report:async(user,data)=>({id:store.record('report',user,user,data)}),moderate:async()=>{calls++;return {ok:true};}};
   const config={production:false,publicUrl:'https://manta.example',sessionSecret:secret,configured:true};
+  bot.channel=async()=>({permissionsFor:()=>({has:()=>true})});
+  bot.integrations=createIntegrations(store,bot,{secret});
   const app=createApp({store,bot,config});const server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));
   const url=`http://127.0.0.1:${server.address().port}`;
   function cookie(user=uid) {const sid=randomUUID();store.db.prepare('INSERT INTO sessions VALUES (?,?,?)').run(sid,JSON.stringify({cookie:{maxAge:100000,httpOnly:true,sameSite:'lax'},user:{id:user,name:'test'},csrf}),Date.now()+100000);const sig=createHmac('sha256',secret).update(sid).digest('base64').replace(/=+$/,'');return `manta.sid=${encodeURIComponent(`s:${sid}.${sig}`)}`;}
@@ -52,6 +55,18 @@ test('API denies anonymous and revoked staff access, including direct record/exp
   const f=await fixture(t);assert.equal((await f.request('/api/admin/records/case')).status,401);
   const ck=f.cookie();assert.equal((await f.request('/api/admin/records/case',{cookie:ck})).status,200);
   f.revoke();assert.equal((await f.request('/api/admin/records/case',{cookie:ck})).status,403);assert.equal((await f.request('/api/admin/tickets/1/transcript',{cookie:ck})).status,403);
+});
+test('integration API requires current staff, CSRF and validated input; supports pause and removal',async t=>{
+  const f=await fixture(t),ck=f.cookie();
+  const body={provider:'github',source:'owner/repo',channel:other,name:'Releases'};
+  assert.equal((await f.request('/api/admin/integrations')).status,401);
+  assert.equal((await f.request('/api/admin/integrations',{cookie:ck,body,token:''})).status,403);
+  assert.equal((await f.request('/api/admin/integrations',{cookie:ck,body:{...body,provider:'unknown'}})).status,400);
+  const response=await f.request('/api/admin/integrations',{cookie:ck,body});assert.equal(response.status,200);const row=await response.json();
+  assert.equal((await f.request(`/api/admin/integrations/${row.id}`,{cookie:ck,body:{action:'pause'}})).status,200);
+  assert.equal((await (await f.request('/api/admin/integrations',{cookie:ck})).json()).connections[0].enabled,false);
+  assert.equal((await f.request(`/api/admin/integrations/${row.id}`,{cookie:ck,body:{action:'remove'}})).status,200);
+  f.revoke();assert.equal((await f.request('/api/admin/integrations',{cookie:ck})).status,403);
 });
 test('CSRF, origin, validation, duplicate request and logout checks protect state changes',async t=>{
   const f=await fixture(t),ck=f.cookie(),body={type:'warn',user:other,reason:'Test warning'},id=randomUUID();

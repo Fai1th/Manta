@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { openDatabase } from './db.js';
 import { createBot } from './bot.js';
 import { settingsSchema, actionSchema, jobSchema, snowflake, reason, canManage } from './validation.js';
+import { providers, integrationSchema } from './integrations.js';
 
 export function createApp({store,bot,config}) {
   const app=express(), production=config.production;
@@ -71,6 +72,14 @@ export function createApp({store,bot,config}) {
   app.use('/api/admin',logged,staff);
   app.use('/api/admin',(req,res,next)=>req.method==='POST'?mutation(req,res,next):next());
   app.get('/api/admin/reference',async(req,res)=>res.json(await bot.reference()));
+  app.get('/api/admin/integrations',(req,res)=>res.json({providers,connections:bot.integrations.list()}));
+  app.post('/api/admin/integrations',async(req,res)=>res.json(await bot.integrations.save(req.actor.id,integrationSchema.parse(req.body))));
+  app.post('/api/admin/integrations/:id',async(req,res)=>{
+    const id=z.coerce.number().int().positive().parse(req.params.id);
+    const body=z.object({action:z.enum(['pause','resume','remove'])}).strict().parse(req.body);
+    if(body.action==='remove')bot.integrations.remove(id);else bot.integrations.change(id,body.action==='resume');
+    res.json({ok:true});
+  });
   app.get('/api/admin/settings',(req,res)=>res.json(store.settings()));
   app.post('/api/admin/settings',async(req,res)=>{
     const s=settingsSchema.parse(req.body), ref=await bot.reference();
@@ -106,7 +115,7 @@ export function createApp({store,bot,config}) {
 if(process.argv[1]===fileURLToPath(import.meta.url)) {
   const env=process.env, configured=['DISCORD_CLIENT_ID','DISCORD_CLIENT_SECRET','DISCORD_TOKEN','DISCORD_GUILD_ID'].every(k=>env[k]);
   const publicUrl=(env.PUBLIC_URL||'http://localhost:3000').replace(/\/$/,'');
-  const config={configured,production:env.NODE_ENV==='production',publicUrl,clientId:env.DISCORD_CLIENT_ID,clientSecret:env.DISCORD_CLIENT_SECRET,token:env.DISCORD_TOKEN,guildId:env.DISCORD_GUILD_ID,messageContent:env.MESSAGE_CONTENT_ENABLED==='true',sessionSecret:env.SESSION_SECRET||randomBytes(32).toString('hex'),proxyHops:Number(env.TRUST_PROXY_HOPS||0),webDir:env.WEB_DIR};
+  const config={configured,production:env.NODE_ENV==='production',publicUrl,clientId:env.DISCORD_CLIENT_ID,clientSecret:env.DISCORD_CLIENT_SECRET,token:env.DISCORD_TOKEN,guildId:env.DISCORD_GUILD_ID,messageContent:env.MESSAGE_CONTENT_ENABLED==='true',sessionSecret:env.SESSION_SECRET||randomBytes(32).toString('hex'),proxyHops:Number(env.TRUST_PROXY_HOPS||0),webDir:env.WEB_DIR,twitchId:env.TWITCH_CLIENT_ID,twitchSecret:env.TWITCH_CLIENT_SECRET};
   if(config.production&&(!env.SESSION_SECRET||env.SESSION_SECRET.length<32||!publicUrl.startsWith('https://')))throw new Error('Production requires HTTPS PUBLIC_URL and a SESSION_SECRET of at least 32 characters.');
   if(!Number.isInteger(config.proxyHops)||config.proxyHops<0||config.proxyHops>3)throw new Error('Invalid TRUST_PROXY_HOPS.');
   const store=openDatabase(env.DATA_DIR||'data');
