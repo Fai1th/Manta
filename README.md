@@ -4,7 +4,7 @@
 <h1 align="center">Manta</h1>
 <p align="center">A free, open-source Discord bot for running your community.</p>
 <p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-a9cee5?style=flat-square" alt="MIT License"></a>
+  <a href="LICENSE"><img src="assets/license-mit.svg" alt="MIT License"></a>
   <a href="https://github.com/Fai1th/Manta/actions/workflows/ci.yml"><img src="https://github.com/Fai1th/Manta/actions/workflows/ci.yml/badge.svg" alt="Build and tests"></a>
 </p>
 <p align="center">
