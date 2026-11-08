@@ -52,7 +52,7 @@ export function createApp({store,bot,config}) {
       const user=await discord('/users/@me',{headers:{Authorization:`Bearer ${token.access_token}`}});
       await new Promise((resolve,reject)=>req.session.regenerate(e=>e?reject(e):resolve()));
       req.session.user={id:user.id,name:user.global_name||user.username};req.session.csrf=randomBytes(32).toString('hex');
-      req.session.save(e=>e?next(e):res.redirect('/'));
+      req.session.save(e=>e?next(e):res.redirect('/dashboard'));
     } catch(e){next(e);}
   });
   app.get('/healthz',(req,res)=>res.status(config.configured&&!bot?.client.isReady()?503:200).json({service:'manta',configured:config.configured,connected:bot?.client.isReady()||false}));
@@ -97,6 +97,7 @@ export function createApp({store,bot,config}) {
   });
   app.use('/api',(req,res)=>res.status(404).json({error:'Endpoint not found.'}));
   app.get('/vendor/bootstrap.css',(req,res)=>res.sendFile(fileURLToPath(new URL('../node_modules/bootstrap/dist/css/bootstrap.min.css',import.meta.url))));
+  app.get('/dashboard',(req,res)=>res.sendFile('dashboard.html',{root:config.webDir||fileURLToPath(new URL('../public',import.meta.url))}));
   app.use(express.static(config.webDir||fileURLToPath(new URL('../public',import.meta.url))));
   app.use((error,req,res,next)=>{console.error('Request failed:',error.code||error.name);const validation=error instanceof z.ZodError;res.status(validation?400:error.status===413?413:400).json({error:validation?error.issues.map(i=>`${i.path.join('.')}: ${i.message}`).join('; '):error.message?.slice(0,500)||'Request failed.'});});
   return app;
