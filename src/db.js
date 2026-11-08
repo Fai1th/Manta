@@ -32,12 +32,13 @@ export function openDatabase(directory) {
     db.prepare(`INSERT INTO activity VALUES (?,?,?,?,?,?) ON CONFLICT(day,user_id,channel_id) DO UPDATE SET messages=messages+excluded.messages,voice_seconds=voice_seconds+excluded.voice_seconds,social_seconds=social_seconds+excluded.social_seconds`).run(new Date(at).toISOString().slice(0,10),user,channel,messages,voice,social);
   }
   function once(id) { return db.prepare('INSERT OR IGNORE INTO processed VALUES (?,?)').run(id,Date.now()).changes === 1; }
-  function stats(days = 7, user = null) {
-    const since = new Date(Date.now() - (days-1)*86400000).toISOString().slice(0,10);
-    const rows = db.prepare('SELECT * FROM activity WHERE day>=? AND (? IS NULL OR user_id=?)').all(since,user,user).filter(r=>!settings().excludedChannels.includes(r.channel_id));
-    const grouped = (key) => Object.values(rows.reduce((a,r)=> { const id=r[key]; a[id]??={name:id,messages:0,voice_seconds:0,social_seconds:0,users:new Set()}; a[id].messages+=r.messages; a[id].voice_seconds+=r.voice_seconds; a[id].social_seconds+=r.social_seconds; a[id].users.add(r.user_id); return a; },{})).map(r=>({...r,users:r.users.size}));
+  function stats(days = 7, user = null, offsetDays = 0) {
+    const since = new Date(Date.now() - (days-1+offsetDays)*86400000).toISOString().slice(0,10);
+    const until = new Date(Date.now() - offsetDays*86400000).toISOString().slice(0,10);
+    const rows = db.prepare('SELECT * FROM activity WHERE day>=? AND day<=? AND (? IS NULL OR user_id=?)').all(since,until,user,user).filter(r=>!settings().excludedChannels.includes(r.channel_id));
+    const grouped = (key) => Object.values(rows.reduce((a,r)=> { const id=r[key]; a[id]??={name:id,messages:0,voice_seconds:0,social_seconds:0,users:new Set(),days:new Set()}; a[id].messages+=r.messages; a[id].voice_seconds+=r.voice_seconds; a[id].social_seconds+=r.social_seconds; a[id].users.add(r.user_id); a[id].days.add(r.day); return a; },{})).map(r=>({...r,users:r.users.size,activeDays:r.days.size,days:undefined}));
     const start = Date.parse(since);
-    const movement = db.prepare('SELECT kind,COUNT(*) AS count FROM movements WHERE time>=? GROUP BY kind').all(start);
+    const movement = db.prepare('SELECT kind,COUNT(*) AS count FROM movements WHERE time>=? AND time<? GROUP BY kind').all(start,Date.parse(until)+86400000);
     const joins = movement.find(r=>r.kind==='join')?.count||0, leaves=movement.find(r=>r.kind==='leave')?.count||0;
     const cohort = db.prepare('SELECT * FROM members WHERE joined>=? AND joined<=?').all(start,Date.now()-7*86400000);
     const participated = (m, low, high) => db.prepare('SELECT 1 FROM activity WHERE user_id=? AND day>=? AND day<? AND (messages>0 OR voice_seconds>0) LIMIT 1').get(m.user_id,new Date(m.joined+low*86400000).toISOString().slice(0,10),new Date(m.joined+high*86400000).toISOString().slice(0,10));

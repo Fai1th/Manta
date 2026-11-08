@@ -20,6 +20,13 @@ test('retention removes old activity and records without deleting recent cases',
   s.activity(uid,'channel',1,0,0,old);const a=s.record('case',uid,other,{reason:'old'});s.db.prepare('UPDATE records SET updated=? WHERE id=?').run(old,a);const b=s.record('case',uid,other,{reason:'new'});
   s.cleanup();assert.equal(s.get(a),null);assert.ok(s.get(b));assert.equal(s.stats(365).messages,0);s.db.close();
 });
+test('comparison periods do not overlap and active days count once across channels',()=>{
+  const s=openDatabase(':memory:');s.activity(uid,'one',2);s.activity(uid,'two',3);s.activity(uid,'one',10,0,0,Date.now()-8*86400000);
+  assert.equal(s.stats(7).messages,5);assert.equal(s.stats(7).members[0].activeDays,1);assert.equal(s.stats(7,null,7).messages,10);s.db.close();
+});
+test('retention preserves pending announcements and unrestored incident snapshots',()=>{
+  const s=openDatabase(':memory:');const job=s.record('job','',uid,{},'scheduled'),incident=s.record('incident','',uid,{},'active');s.db.prepare('UPDATE records SET updated=?').run(Date.now()-100*86400000);s.cleanup();assert.ok(s.get(job));assert.ok(s.get(incident));s.db.close();
+});
 test('validates action boundaries and prevents self, owner and higher-role moderation',()=>{
   assert.equal(actionSchema.safeParse({type:'ban',user:'bad',reason:'why'}).success,false);
   assert.equal(actionSchema.safeParse({type:'timeout',user:uid,reason:'why',minutes:40321}).success,false);
